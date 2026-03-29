@@ -4,7 +4,7 @@ import "./index.css";
 function App() {
   return (
     <div>
-      <h1 className="title">Proof I Exist</h1>
+      <h1 className="title">_yk404_</h1>
       <DailyGallery />
     </div>
   );

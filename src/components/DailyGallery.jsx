@@ -1,30 +1,57 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabase";
 
-const getDates = () => {
-  const start = new Date("2025-01-01");
-  const today = new Date();
-  const dates = [];
-
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    dates.push(d.toISOString().split("T")[0]);
-  }
-
-  return dates.reverse();
-};
-
 const DailyGallery = () => {
-  const [loading, setLoading] = useState(false);
+  const [images, setImages] = useState([]); // Stores { name, url }
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
 
-  const dates = getDates();
+  // 1. Fetch images that actually exist in the bucket
+ const fetchImages = async () => {
+  try {
+    setLoading(true);
+    
+    // 1. Increased limit to 1000 so old images don't get cut off
+    const { data, error } = await supabase.storage
+      .from("yuke-daily")
+      .list("", {
+        limit: 1000, 
+        sortBy: { column: "name", order: "desc" },
+      });
 
+    if (error) throw error;
+
+    // 2. Make the filter case-insensitive (.jpg and .JPG)
+    // 3. Filter out the '.emptyFolderPlaceholder' file if it exists
+    const formattedImages = data
+      .filter((file) => 
+        file.name.toLowerCase().endsWith(".jpg") || 
+        file.name.toLowerCase().endsWith(".jpeg")
+      )
+      .map((file) => ({
+        name: file.name.replace(/\.[^/.]+$/, ""), // Removes any extension correctly
+        url: supabase.storage.from("yuke-daily").getPublicUrl(file.name).data.publicUrl,
+      }));
+
+    setImages(formattedImages);
+  } catch (err) {
+    console.error("Error fetching images:", err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  useEffect(() => {
+    fetchImages();
+  }, []);
+
+  // 2. Handle Upload
   const handleUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setLoading(true);
-
+    setUploading(true);
     const today = new Date().toISOString().split("T")[0];
 
     const { error } = await supabase.storage
@@ -33,103 +60,62 @@ const DailyGallery = () => {
 
     if (error) {
       alert("Upload failed ❌");
-      setLoading(false);
-      return;
+    } else {
+      // Refresh list without reloading page
+      await fetchImages();
     }
-
-    alert("Uploaded 🔥");
-    setLoading(false);
-    window.location.reload();
+    setUploading(false);
   };
 
-  const getImageUrl = (date) => {
-    return `https://iqiykkwixlnwdeviuxgy.supabase.co/storage/v1/object/public/yuke-daily/${date}.jpg`;
-  };
-
-  // 🔥 Keyboard navigation
+  // 3. Keyboard Nav
   useEffect(() => {
     const handleKey = (e) => {
       if (selectedIndex === null) return;
-
-      if (e.key === "ArrowRight") {
-        setSelectedIndex((prev) => (prev + 1) % dates.length);
-      }
-
-      if (e.key === "ArrowLeft") {
-        setSelectedIndex((prev) =>
-          prev === 0 ? dates.length - 1 : prev - 1
-        );
-      }
-
-      if (e.key === "Escape") {
-        setSelectedIndex(null);
-      }
+      if (e.key === "ArrowRight") setSelectedIndex((prev) => (prev + 1) % images.length);
+      if (e.key === "ArrowLeft") setSelectedIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1));
+      if (e.key === "Escape") setSelectedIndex(null);
     };
-
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [selectedIndex, dates.length]);
+  }, [selectedIndex, images]);
 
   return (
-    <div>
-      {/* Upload */}
-      <div className="upload-box">
-        <input type="file" accept="image/*" onChange={handleUpload} />
-        <p>{loading ? "Uploading..." : "Upload today's selfie 📸"}</p>
-      </div>
+    <div className="container">
+      <header className="upload-section">
+        <label className="custom-file-upload">
+          <input type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
+          {uploading ? "Uploading..." : "Add Today's Snapshot"}
+        </label>
+        <p className="status-text">
+          {loading ? "Syncing timeline..." : `${images.length} days recorded`}
+        </p>
+      </header>
 
-      {/* Gallery */}
       <div className="gallery">
-        {dates.map((date, index) => {
-          const imgUrl = getImageUrl(date);
-
-          return (
-            <div key={date} className="card">
-              <img
-                src={imgUrl}
-                alt={date}
-                onClick={() => setSelectedIndex(index)}
-                onError={(e) => (e.target.style.display = "none")}
-              />
-              <p className="date">{date}</p>
-              <p className="day">Day {dates.length - index}</p>
+        {images.map((img, index) => (
+          <div key={img.name} className="card" onClick={() => setSelectedIndex(index)}>
+            <div className="image-container">
+              <img src={img.url} alt={img.name} loading="lazy" />
             </div>
-          );
-        })}
+            <div className="card-info">
+              <p className="date">{img.name}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* 🔥 Advanced Lightbox */}
+      {/* Aesthetic Lightbox */}
       {selectedIndex !== null && (
         <div className="lightbox" onClick={() => setSelectedIndex(null)}>
-          <span className="close">✕</span>
-
-          <span
-            className="prev"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedIndex(
-                selectedIndex === 0 ? dates.length - 1 : selectedIndex - 1
-              );
-            }}
-          >
-            ◀
-          </span>
-
-          <img
-            src={getImageUrl(dates[selectedIndex])}
-            alt="preview"
-            onClick={(e) => e.stopPropagation()}
-          />
-
-          <span
-            className="next"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedIndex((selectedIndex + 1) % dates.length);
-            }}
-          >
-            ▶
-          </span>
+          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <button className="nav-btn prev" onClick={() => setSelectedIndex(selectedIndex === 0 ? images.length - 1 : selectedIndex - 1)}>◀</button>
+            
+            <img src={images[selectedIndex].url} className="lightbox-img" alt="Preview" />
+            
+            <button className="nav-btn next" onClick={() => setSelectedIndex((selectedIndex + 1) % images.length)}>▶</button>
+            
+            <p style={{ textAlign: "center", marginTop: "15px" }}>{images[selectedIndex].name}</p>
+          </div>
         </div>
       )}
     </div>
