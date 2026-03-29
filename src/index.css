@@ -215,3 +215,14 @@ body {
   .container { padding: 40px 15px; }
   .title { font-size: 1.8rem; }
 }
+
+/* Improve mobile gesture feel */
+.lightbox-img {
+  touch-action: none;
+  transition: transform 0.2s ease;
+}
+
+/* Optional smoother tap feel */
+.lightbox {
+  overscroll-behavior: contain;
+}
